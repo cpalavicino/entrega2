@@ -17,13 +17,23 @@ violaciones, que se penaliza en el fitness y se reduce con un operador de repara
 Los indices internos van de 0; la salida se entrega con indices de 1 como en el modelo.
 """
 import csv
-import hashlib
 import math
 import random
 import time
 from dataclasses import dataclass, field
 from itertools import combinations
 from pathlib import Path
+import sys
+
+PROJECT_DIR = Path(__file__).resolve().parents[1]
+if str(PROJECT_DIR) not in sys.path:
+    sys.path.insert(0, str(PROJECT_DIR))
+
+from gap_heuristicas import (
+    calcular_gap_porcentual,
+    cargar_referencias_gurobi,
+    seleccionar_jornadas_criticas,
+)
 
 
 # ----------------------------------------------------------------------------
@@ -485,15 +495,14 @@ def load_instance(csv_path, w_b=10, w_ext=4, critical_factor=0.40,
 
     total_teams = len(teams)
     rounds = total_teams - 1
-    critical_count = math.ceil(
-        rounds * critical_factor * len(external_teams) / total_teams
-    )
-    instance_seed = hashlib.sha256(
-        f"{critical_seed}:{csv_path.name}".encode("utf-8")
-    ).digest()
-    critical_rng = random.Random(int.from_bytes(instance_seed[:8], "big"))
     critical_rounds = set(
-        critical_rng.sample(range(1, rounds + 1), critical_count)
+        seleccionar_jornadas_criticas(
+            csv_path.name,
+            total_teams,
+            len(external_teams),
+            factor=critical_factor,
+            semilla=critical_seed,
+        )
     )
 
     high_audience_pairs = set(combinations(sorted(high_audience_teams), 2))
@@ -563,9 +572,20 @@ def run_all_instances(instances_dir=None, w_b=10, w_ext=4, verbose=False,
     if generations < 1:
         raise ValueError("generations debe ser un entero positivo.")
 
+    output_dir = instances_dir.parent / "RESULTADOS"
+    referencias = cargar_referencias_gurobi(
+        output_dir / "Comparacion_Estrategias_Gurobi.csv",
+        [path.name for path in instance_files],
+    )
     results = []
     for csv_path in instance_files:
         instance = load_instance(csv_path, w_b=w_b, w_ext=w_ext)
+        instancia_comparable = load_instance(
+            csv_path,
+            w_b=referencias["w_b"],
+            w_ext=referencias["w_ext"],
+        )
+        referencia_instancia = referencias["resultados"][csv_path.name]
         population_size = math.ceil(50 * instance.T / 8)
         mutation_rate = mutation_rate_for_size(instance.T)
         for seed in seeds:
@@ -579,6 +599,9 @@ def run_all_instances(instances_dir=None, w_b=10, w_ext=4, verbose=False,
                 verbose=verbose,
             )
             feasible, verified_objective, errors = verify(instance, solution["x"])
+            feasible_comparable, objective_comparable, _ = verify(
+                instancia_comparable, solution["x"]
+            )
             result = {
                 "Instancia": csv_path.name,
                 "Semilla": seed,
@@ -588,10 +611,30 @@ def run_all_instances(instances_dir=None, w_b=10, w_ext=4, verbose=False,
                 "Jornadas_criticas": sorted(instance.J_ext),
                 "Fitness": solution["z"] + instance.lam * solution["violations"],
                 "Objetivo": solution["z"],
+                "Objetivo_comparable_Gurobi": objective_comparable,
                 "Violaciones": solution["violations"],
                 "Factible": solution["feasible"],
+                "Factible_comparable_Gurobi": feasible_comparable,
                 "Verificacion_independiente": feasible,
                 "Objetivo_verificado": verified_objective,
+                "ObjVal_Gurobi_normal": referencia_instancia["normal"],
+                "Gap_normal_%": (
+                    calcular_gap_porcentual(
+                        objective_comparable, referencia_instancia["normal"]
+                    )
+                    if feasible_comparable
+                    else None
+                ),
+                "ObjVal_Gurobi_sin_cortes_heuristicas":
+                    referencia_instancia["sin_cortes_heuristicas"],
+                "Gap_sin_cortes_heuristicas_%": (
+                    calcular_gap_porcentual(
+                        objective_comparable,
+                        referencia_instancia["sin_cortes_heuristicas"],
+                    )
+                    if feasible_comparable
+                    else None
+                ),
                 "Tiempo_s": elapsed,
                 "Generaciones_completadas": len(history),
                 "Errores_verificacion": errors,
@@ -604,7 +647,6 @@ def run_all_instances(instances_dir=None, w_b=10, w_ext=4, verbose=False,
                 f"| factible={feasible} | tiempo={elapsed:.1f}s"
             )
 
-    output_dir = instances_dir.parent / "RESULTADOS"
     output_dir.mkdir(parents=True, exist_ok=True)
     report_path = output_dir / "Resultados_GA_5_semillas.csv"
     with report_path.open("w", encoding="utf-8-sig", newline="") as file:

@@ -2,13 +2,23 @@ import pandas as pd
 import numpy as np
 import random
 import time
-import math
 from pathlib import Path
+import sys
+
+PROJECT_DIR = Path(__file__).resolve().parents[1]
+if str(PROJECT_DIR) not in sys.path:
+    sys.path.insert(0, str(PROJECT_DIR))
+
+from gap_heuristicas import (
+    calcular_gap_porcentual,
+    cargar_referencias_gurobi,
+    seleccionar_jornadas_criticas,
+)
 
 # ==========================================
 # 1. LECTURA DE INSTANCIAS Y PREPARACIÓN
 # ==========================================
-def cargar_instancia(filepath, seed=42):
+def cargar_instancia(filepath, seed=42, critical_seed=42):
     random.seed(seed)
     np.random.seed(seed)
     
@@ -20,9 +30,16 @@ def cargar_instancia(filepath, seed=42):
     e_ext = df[df['Juega_Otras_Ligas'] == 1].index.tolist()
     
     # Jornadas Críticas J_EXT (Regla del 40%)
-    porcentaje_critico = 0.40 * (len(e_ext) / N)
-    num_jornadas_criticas = math.ceil(porcentaje_critico * jornadas_totales)
-    j_ext = random.sample(range(jornadas_totales), num_jornadas_criticas)
+    j_ext = [
+        jornada - 1
+        for jornada in seleccionar_jornadas_criticas(
+            Path(filepath).name,
+            N,
+            len(e_ext),
+            factor=0.40,
+            semilla=critical_seed,
+        )
+    ]
     
     # Conjunto S: Estadios compartidos
     # Agrupamos por ID_Estadio y guardamos pares que lo comparten
@@ -39,12 +56,21 @@ def cargar_instancia(filepath, seed=42):
     # Conjunto P: Partidos de alta demanda (Clásicos)
     # Definiremos un clásico si AMBOS equipos tienen Peso_Audiencia == 100
     p_clasicos = []
-    equipos_top = df[df['Peso_Audiencia'] >= 100].index.tolist()
+    equipos_top = df[df['Peso_Audiencia'] == 100].index.tolist()
     for i in range(len(equipos_top)):
         for j in range(i+1, len(equipos_top)):
             p_clasicos.append((equipos_top[i], equipos_top[j]))
             
-    return N, jornadas_totales, e_ext, j_ext, s_estadios, p_clasicos
+    max_clasicos_por_jornada = len(equipos_top) // 2
+    return (
+        N,
+        jornadas_totales,
+        e_ext,
+        j_ext,
+        s_estadios,
+        p_clasicos,
+        max_clasicos_por_jornada,
+    )
 
 
 # ==========================================
@@ -171,13 +197,23 @@ def perturbacion(S):
 # ==========================================
 # 6. CICLO PRINCIPAL ILS
 # ==========================================
-def ejecutar_ils(filepath, Mmax=1, max_iter=200, time_limit=300, seed=42):
+def ejecutar_ils(filepath, Mmax=None, max_iter=200, time_limit=300, seed=42):
     start_time = time.time()
     
     # Cargar datos
-    N, jornadas_totales, e_ext, j_ext, s_estadios, p_clasicos = cargar_instancia(
+    (
+        N,
+        jornadas_totales,
+        e_ext,
+        j_ext,
+        s_estadios,
+        p_clasicos,
+        mmax_instancia,
+    ) = cargar_instancia(
         filepath, seed=seed
     )
+    if Mmax is None:
+        Mmax = mmax_instancia
     
     # Inicialización
     S_actual = generar_solucion_inicial(N)
@@ -214,14 +250,64 @@ def ejecutar_ils(filepath, Mmax=1, max_iter=200, time_limit=300, seed=42):
             
     tiempo_total = time.time() - start_time
     
-    return S_mejor, f_mejor, iteracion, tiempo_total, sorted(j_ext)
+    return S_mejor, f_mejor, iteracion, tiempo_total, sorted(jornada + 1 for jornada in j_ext)
+
+
+def evaluar_objetivo_comparable(
+    S,
+    e_ext,
+    j_ext,
+    s_estadios,
+    p_clasicos,
+    Mmax,
+    w_b,
+    w_ext,
+):
+    """Evalúa una solución con el objetivo y las restricciones del modelo Gurobi."""
+    cantidad_equipos, jornadas_totales = S.shape
+    cantidad_localias = np.sum(S > 0, axis=1)
+    factible = bool(
+        np.all(cantidad_localias >= cantidad_equipos // 2 - 1)
+        and np.all(cantidad_localias <= cantidad_equipos // 2)
+    )
+
+    breaks = 0
+    for equipo in range(cantidad_equipos):
+        for jornada in range(1, jornadas_totales):
+            if np.sign(S[equipo, jornada - 1]) == np.sign(S[equipo, jornada]):
+                breaks += 1
+        for jornada in range(jornadas_totales - 2):
+            tres_jornadas = S[equipo, jornada:jornada + 3]
+            if np.all(tres_jornadas > 0) or np.all(tres_jornadas < 0):
+                factible = False
+
+    visitas_criticas = sum(
+        S[equipo, jornada] < 0
+        for equipo in e_ext
+        for jornada in j_ext
+    )
+    for jornada in range(jornadas_totales):
+        clasicos = sum(
+            abs(S[equipo_1, jornada]) == equipo_2 + 1
+            for equipo_1, equipo_2 in p_clasicos
+        )
+        if clasicos > Mmax:
+            factible = False
+        if any(
+            S[equipo_1, jornada] > 0 and S[equipo_2, jornada] > 0
+            for equipo_1, equipo_2 in s_estadios
+        ):
+            factible = False
+
+    objetivo = w_b * breaks + w_ext * visitas_criticas
+    return objetivo, factible
 
 
 def ejecutar_todas_instancias(
     carpeta_instancias=None,
     carpeta_resultados=None,
     semillas=range(1, 6),
-    Mmax=1,
+    Mmax=None,
     max_iter=500,
     time_limit=600,
 ):
@@ -239,16 +325,41 @@ def ejecutar_todas_instancias(
     if not semillas:
         raise ValueError("Debe proporcionarse al menos una semilla.")
 
+    referencias = cargar_referencias_gurobi(
+        carpeta_resultados / "Comparacion_Estrategias_Gurobi.csv",
+        [archivo.name for archivo in archivos_instancia],
+    )
     resultados = []
     for archivo in archivos_instancia:
+        (
+            _,
+            _,
+            e_ext,
+            j_ext,
+            s_estadios,
+            p_clasicos,
+            mmax_instancia,
+        ) = cargar_instancia(archivo)
+        mmax_ejecucion = mmax_instancia if Mmax is None else Mmax
+        referencia_instancia = referencias["resultados"][archivo.name]
         for seed in semillas:
             print(f"Ejecutando ILS: {archivo.name} | semilla={seed}")
-            _, fitness, iteraciones, tiempo, jornadas_criticas = ejecutar_ils(
+            solucion, fitness, iteraciones, tiempo, jornadas_criticas = ejecutar_ils(
                 archivo,
-                Mmax=Mmax,
+                Mmax=mmax_ejecucion,
                 max_iter=max_iter,
                 time_limit=time_limit,
                 seed=seed,
+            )
+            objetivo_comparable, factible_comparable = evaluar_objetivo_comparable(
+                solucion,
+                e_ext,
+                j_ext,
+                s_estadios,
+                p_clasicos,
+                mmax_instancia,
+                referencias["w_b"],
+                referencias["w_ext"],
             )
             resultado = {
                 "Instancia": archivo.name,
@@ -256,6 +367,26 @@ def ejecutar_todas_instancias(
                 "Equipos": len(pd.read_csv(archivo)),
                 "Jornadas_criticas": jornadas_criticas,
                 "Fitness_ILS": fitness,
+                "Objetivo_comparable_Gurobi": objetivo_comparable,
+                "Factible_comparable_Gurobi": factible_comparable,
+                "ObjVal_Gurobi_normal": referencia_instancia["normal"],
+                "Gap_normal_%": (
+                    calcular_gap_porcentual(
+                        objetivo_comparable, referencia_instancia["normal"]
+                    )
+                    if factible_comparable
+                    else None
+                ),
+                "ObjVal_Gurobi_sin_cortes_heuristicas":
+                    referencia_instancia["sin_cortes_heuristicas"],
+                "Gap_sin_cortes_heuristicas_%": (
+                    calcular_gap_porcentual(
+                        objetivo_comparable,
+                        referencia_instancia["sin_cortes_heuristicas"],
+                    )
+                    if factible_comparable
+                    else None
+                ),
                 "Iteraciones": iteraciones,
                 "Tiempo_s": tiempo,
             }

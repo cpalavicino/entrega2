@@ -1,12 +1,10 @@
-import hashlib
-import math
-import random
 from itertools import combinations
 from pathlib import Path
 
 import pandas as pd
 from gurobipy import GRB
 
+from gap_heuristicas import seleccionar_jornadas_criticas
 from round_robin_gurobi_modelo import resolver
 
 
@@ -62,16 +60,12 @@ def preparar_instancia(
         for equipo, participa in zip(equipos, juega_otras_ligas)
         if participa == 1
     ]
-    porcentaje_criticas = (
-        factor_jornadas_criticas * len(e_ext) / cantidad_equipos
-    )
-    cantidad_criticas = math.ceil(total_jornadas * porcentaje_criticas)
-    semilla_instancia = hashlib.sha256(
-        f"{semilla_jornadas_criticas}:{ruta_csv.name}".encode("utf-8")
-    ).digest()
-    generador = random.Random(int.from_bytes(semilla_instancia[:8], "big"))
-    jornadas_criticas = sorted(
-        generador.sample(range(1, total_jornadas + 1), cantidad_criticas)
+    jornadas_criticas = seleccionar_jornadas_criticas(
+        ruta_csv.name,
+        cantidad_equipos,
+        len(e_ext),
+        factor=factor_jornadas_criticas,
+        semilla=semilla_jornadas_criticas,
     )
 
     pares_estadio = []
@@ -179,6 +173,8 @@ def resolver_instancia(
         "ObjVal": objetivo,
         "ObjBoundC": cota_inferior,
         "MIPGap": brecha,
+        "Peso_breaks": w_b,
+        "Peso_otras_ligas": w_ext,
         "Runtime (s)": modelo.Runtime,
         "NodeCount": modelo.NodeCount,
         "Equipos otras ligas": len(datos["E_EXT"]),
