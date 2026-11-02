@@ -1,3 +1,6 @@
+import hashlib
+import math
+import random
 from itertools import combinations
 from pathlib import Path
 
@@ -11,8 +14,8 @@ CARPETA_PROYECTO = Path(__file__).resolve().parent
 CARPETA_INSTANCIAS = CARPETA_PROYECTO / "INSTANCIAS"
 CARPETA_RESULTADOS = CARPETA_PROYECTO / "RESULTADOS"
 
-# Completa este diccionario cuando se disponga del calendario real de otras ligas.
-JORNADAS_CRITICAS_POR_INSTANCIA = {}
+FACTOR_JORNADAS_CRITICAS = 0.40
+SEMILLA_JORNADAS_CRITICAS = 42
 
 COLUMNAS_REQUERIDAS = {
     "Equipo",
@@ -22,8 +25,12 @@ COLUMNAS_REQUERIDAS = {
 }
 
 
-def preparar_instancia(ruta_csv, jornadas_criticas=()):
-    """Convierte una instancia CSV en los parámetros que requiere el modelo."""
+def preparar_instancia(
+    ruta_csv,
+    factor_jornadas_criticas=FACTOR_JORNADAS_CRITICAS,
+    semilla_jornadas_criticas=SEMILLA_JORNADAS_CRITICAS,
+):
+    """Prepara el modelo y selecciona jornadas críticas según el factor y los equipos externos."""
     ruta_csv = Path(ruta_csv)
     df = pd.read_csv(ruta_csv)
     faltantes = COLUMNAS_REQUERIDAS.difference(df.columns)
@@ -47,17 +54,25 @@ def preparar_instancia(ruta_csv, jornadas_criticas=()):
     id_por_equipo = {equipo: i for i, equipo in enumerate(equipos, start=1)}
     cantidad_equipos = len(equipos)
     total_jornadas = cantidad_equipos - 1
-    jornadas_criticas = sorted({int(jornada) for jornada in jornadas_criticas})
-    if any(jornada < 1 or jornada > total_jornadas for jornada in jornadas_criticas):
-        raise ValueError(
-            f"{ruta_csv.name}: las jornadas críticas deben estar entre 1 y {total_jornadas}."
-        )
+    if not 0 <= factor_jornadas_criticas <= 1:
+        raise ValueError("El factor de jornadas críticas debe estar entre 0 y 1.")
 
     e_ext = [
         id_por_equipo[equipo]
         for equipo, participa in zip(equipos, juega_otras_ligas)
         if participa == 1
     ]
+    porcentaje_criticas = (
+        factor_jornadas_criticas * len(e_ext) / cantidad_equipos
+    )
+    cantidad_criticas = math.ceil(total_jornadas * porcentaje_criticas)
+    semilla_instancia = hashlib.sha256(
+        f"{semilla_jornadas_criticas}:{ruta_csv.name}".encode("utf-8")
+    ).digest()
+    generador = random.Random(int.from_bytes(semilla_instancia[:8], "big"))
+    jornadas_criticas = sorted(
+        generador.sample(range(1, total_jornadas + 1), cantidad_criticas)
+    )
 
     pares_estadio = []
     for _, grupo in df.groupby("ID_Estadio", sort=False):
@@ -88,7 +103,6 @@ def preparar_instancia(ruta_csv, jornadas_criticas=()):
 
 def resolver_instancia(
     ruta_csv,
-    jornadas_criticas=(),
     w_b=1.0,
     w_ext=2.0,
     time_limit=3600,
@@ -96,6 +110,8 @@ def resolver_instancia(
     verbose=False,
     solver=None,
     estrategia="normal",
+    factor_jornadas_criticas=FACTOR_JORNADAS_CRITICAS,
+    semilla_jornadas_criticas=SEMILLA_JORNADAS_CRITICAS,
 ):
     """Lee, construye y resuelve una instancia; devuelve un resumen y el calendario."""
     if solver is None:
@@ -105,7 +121,11 @@ def resolver_instancia(
             "estrategia debe ser 'normal' o 'sin_cortes_heuristicas'."
         )
 
-    datos = preparar_instancia(ruta_csv, jornadas_criticas)
+    datos = preparar_instancia(
+        ruta_csv,
+        factor_jornadas_criticas,
+        semilla_jornadas_criticas,
+    )
     parametros_modelo = {
         clave: datos[clave]
         for clave in ("n", "E_EXT", "J_EXT", "P", "S", "M_max")
@@ -163,6 +183,7 @@ def resolver_instancia(
         "NodeCount": modelo.NodeCount,
         "Equipos otras ligas": len(datos["E_EXT"]),
         "Jornadas críticas": len(datos["J_EXT"]),
+        "Detalle jornadas críticas": datos["J_EXT"],
         "Pares estadio": len(datos["S"]),
         "Pares alta audiencia": len(datos["P"]),
         "Calendario": partidos,
@@ -187,13 +208,14 @@ def guardar_calendario(resultado, carpeta_salida):
 def ejecutar_todas_instancias(
     carpeta_instancias=CARPETA_INSTANCIAS,
     carpeta_resultados=CARPETA_RESULTADOS,
-    jornadas_criticas_por_instancia=None,
     w_b=1.0,
-    w_ext=1.0,
+    w_ext=2.0,
     time_limit=3600,
     mip_gap=0.0,
     verbose=False,
     guardar_reporte=True,
+    factor_jornadas_criticas=FACTOR_JORNADAS_CRITICAS,
+    semilla_jornadas_criticas=SEMILLA_JORNADAS_CRITICAS,
 ):
     """Resuelve secuencialmente todos los CSV de una carpeta y guarda sus calendarios."""
     carpeta_instancias = Path(carpeta_instancias)
@@ -203,22 +225,20 @@ def ejecutar_todas_instancias(
             f"No se encontraron archivos CSV de instancias en {carpeta_instancias}."
         )
 
-    if jornadas_criticas_por_instancia is None:
-        jornadas_criticas_por_instancia = JORNADAS_CRITICAS_POR_INSTANCIA
-
     resultados = []
     for ruta_csv in archivos_instancia:
         for estrategia in ("normal", "sin_cortes_heuristicas"):
             print(f"Resolviendo {ruta_csv.name} ({estrategia})...")
             resultado = resolver_instancia(
                 ruta_csv,
-                jornadas_criticas=jornadas_criticas_por_instancia.get(ruta_csv.name, ()),
                 w_b=w_b,
                 w_ext=w_ext,
                 time_limit=time_limit,
                 mip_gap=mip_gap,
                 verbose=verbose,
                 estrategia=estrategia,
+                factor_jornadas_criticas=factor_jornadas_criticas,
+                semilla_jornadas_criticas=semilla_jornadas_criticas,
             )
             ruta_calendario = guardar_calendario(resultado, carpeta_resultados)
             if ruta_calendario is None:

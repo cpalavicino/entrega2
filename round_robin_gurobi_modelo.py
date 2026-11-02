@@ -9,7 +9,7 @@ def resolver(n, E_EXT=(), J_EXT=(), P=(), S=(), M_max=0, w_b=1.0, w_ext=1.0,
     """
     n      : mitad del número de equipos (equipos 1..2n, jornadas 1..2n-1)
     E_EXT  : equipos que participan en otras ligas
-    J_EXT  : jornadas críticas de otras ligas
+    J_EXT  : jornadas críticas seleccionadas para el torneo
     P      : pares (i, j), i < j, con partidos de alta audiencia
     S      : pares (i, j), i < j, que comparten estadio
     M_max  : dict {t: máx. partidos de alta audiencia} o entero para todas las jornadas
@@ -126,7 +126,7 @@ def resolver(n, E_EXT=(), J_EXT=(), P=(), S=(), M_max=0, w_b=1.0, w_ext=1.0,
         name="max_locales_seguidos",
     )
 
-    # (9) Penalización por ser visitante en jornada crítica de otra liga
+    # (9) Penalización por ser visitante en una jornada crítica
     m.addConstrs(
         (v[i, t] >= 1 - y[i, t] for i in E_EXT for t in J_EXT),
         name="visita_jornada_critica",
