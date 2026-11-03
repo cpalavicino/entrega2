@@ -1,0 +1,51 @@
+Instancia,Semilla,Equipos,Jornadas_criticas,Fitness_ILS,Objetivo_comparable_Gurobi,Factible_comparable_Gurobi,ObjVal_Gurobi_normal,Gap_normal_%,ObjVal_Gurobi_sin_cortes_heuristicas,Gap_sin_cortes_heuristicas_%,Iteraciones,Tiempo_s
+Instancia_Sintetica_10Eq_v1.csv,1,10,[1],160036,36.0,False,8.0,,8.0,,506,8.767704486846924
+Instancia_Sintetica_10Eq_v1.csv,2,10,[1],160036,36.0,False,8.0,,8.0,,501,8.387786626815796
+Instancia_Sintetica_10Eq_v1.csv,3,10,[1],160036,36.0,False,8.0,,8.0,,501,8.714625358581543
+Instancia_Sintetica_10Eq_v1.csv,4,10,[1],160036,36.0,False,8.0,,8.0,,502,8.488369703292847
+Instancia_Sintetica_10Eq_v1.csv,5,10,[1],160036,36.0,False,8.0,,8.0,,521,8.722836971282959
+Instancia_Sintetica_10Eq_v2.csv,1,10,[9],80040,40.0,False,8.0,,8.0,,507,8.588300228118896
+Instancia_Sintetica_10Eq_v2.csv,2,10,[9],80040,40.0,False,8.0,,8.0,,503,8.616532325744629
+Instancia_Sintetica_10Eq_v2.csv,3,10,[9],80040,40.0,False,8.0,,8.0,,512,8.730215311050415
+Instancia_Sintetica_10Eq_v2.csv,4,10,[9],80040,40.0,False,8.0,,8.0,,529,8.911317110061646
+Instancia_Sintetica_10Eq_v2.csv,5,10,[9],80040,40.0,False,8.0,,8.0,,506,8.746213674545288
+Instancia_Sintetica_12Eq_v1.csv,1,12,"[2, 9]",130076,60.0,False,10.0,,10.0,,545,22.728567123413086
+Instancia_Sintetica_12Eq_v1.csv,2,12,"[2, 9]",130076,60.0,False,10.0,,10.0,,553,22.626605987548828
+Instancia_Sintetica_12Eq_v1.csv,3,12,"[2, 9]",130076,60.0,False,10.0,,10.0,,523,21.262155294418335
+Instancia_Sintetica_12Eq_v1.csv,4,12,"[2, 9]",130076,60.0,False,10.0,,10.0,,512,21.47661852836609
+Instancia_Sintetica_12Eq_v1.csv,5,12,"[2, 9]",130076,60.0,False,10.0,,10.0,,501,20.83608865737915
+Instancia_Sintetica_12Eq_v2.csv,1,12,[1],130056,56.0,False,10.0,,10.0,,545,23.893127918243408
+Instancia_Sintetica_12Eq_v2.csv,2,12,[1],130056,56.0,False,10.0,,10.0,,560,23.83413052558899
+Instancia_Sintetica_12Eq_v2.csv,3,12,[1],130056,56.0,False,10.0,,10.0,,510,22.049235343933105
+Instancia_Sintetica_12Eq_v2.csv,4,12,[1],130056,56.0,False,10.0,,10.0,,511,22.288297653198242
+Instancia_Sintetica_12Eq_v2.csv,5,12,[1],130056,56.0,False,10.0,,10.0,,503,22.040863752365112
+Instancia_Sintetica_14Eq_v1.csv,1,14,"[2, 9]",270128,88.0,False,12.0,,12.0,,500,46.292226791381836
+Instancia_Sintetica_14Eq_v1.csv,2,14,"[2, 9]",270128,88.0,False,12.0,,12.0,,500,46.66455364227295
+Instancia_Sintetica_14Eq_v1.csv,3,14,"[2, 9]",270128,88.0,False,12.0,,12.0,,500,45.560616970062256
+Instancia_Sintetica_14Eq_v1.csv,4,14,"[2, 9]",270128,88.0,False,12.0,,12.0,,500,46.47871923446655
+Instancia_Sintetica_14Eq_v1.csv,5,14,"[2, 9]",270128,88.0,False,12.0,,12.0,,500,45.67528748512268
+Instancia_Sintetica_14Eq_v2.csv,1,14,"[5, 7]",300106,82.0,False,12.0,,12.0,,616,55.039820194244385
+Instancia_Sintetica_14Eq_v2.csv,2,14,"[5, 7]",300106,82.0,False,12.0,,12.0,,525,47.716676473617554
+Instancia_Sintetica_14Eq_v2.csv,3,14,"[5, 7]",300106,82.0,False,12.0,,12.0,,662,59.41214871406555
+Instancia_Sintetica_14Eq_v2.csv,4,14,"[5, 7]",300106,82.0,False,12.0,,12.0,,517,44.70279026031494
+Instancia_Sintetica_14Eq_v2.csv,5,14,"[5, 7]",300106,82.0,False,12.0,,12.0,,508,44.9428551197052
+Instancia_Sintetica_16Eq_v1.csv,1,16,"[8, 10]",310128,112.0,False,14.0,,14.0,,511,87.14868402481079
+Instancia_Sintetica_16Eq_v1.csv,2,16,"[8, 10]",310128,112.0,False,14.0,,14.0,,519,87.98371696472168
+Instancia_Sintetica_16Eq_v1.csv,3,16,"[8, 10]",310128,112.0,False,14.0,,14.0,,571,99.31341981887817
+Instancia_Sintetica_16Eq_v1.csv,4,16,"[8, 10]",310128,112.0,False,14.0,,14.0,,518,87.36189222335815
+Instancia_Sintetica_16Eq_v1.csv,5,16,"[8, 10]",310128,112.0,False,14.0,,14.0,,512,84.2543261051178
+Instancia_Sintetica_16Eq_v2.csv,1,16,"[2, 10]",380138,114.0,False,14.0,,14.0,,507,94.45487570762634
+Instancia_Sintetica_16Eq_v2.csv,2,16,"[2, 10]",380138,114.0,False,14.0,,14.0,,545,95.89103651046753
+Instancia_Sintetica_16Eq_v2.csv,3,16,"[2, 10]",380138,114.0,False,14.0,,14.0,,721,128.1147003173828
+Instancia_Sintetica_16Eq_v2.csv,4,16,"[2, 10]",380138,114.0,False,14.0,,14.0,,615,112.55524730682373
+Instancia_Sintetica_16Eq_v2.csv,5,16,"[2, 10]",380138,114.0,False,14.0,,14.0,,505,88.99056768417358
+Instancia_Sintetica_8Eq_v1.csv,1,8,[4],40020,20.0,False,6.0,,6.0,,503,3.015465021133423
+Instancia_Sintetica_8Eq_v1.csv,2,8,[4],40020,20.0,False,6.0,,6.0,,501,2.9295482635498047
+Instancia_Sintetica_8Eq_v1.csv,3,8,[4],40020,20.0,False,6.0,,6.0,,502,2.9241294860839844
+Instancia_Sintetica_8Eq_v1.csv,4,8,[4],40020,20.0,False,6.0,,6.0,,501,2.8902547359466553
+Instancia_Sintetica_8Eq_v1.csv,5,8,[4],40020,20.0,False,6.0,,6.0,,504,3.0278098583221436
+Instancia_Sintetica_8Eq_v2.csv,1,8,[1],40020,20.0,False,6.0,,6.0,,504,2.6467795372009277
+Instancia_Sintetica_8Eq_v2.csv,2,8,[1],40020,20.0,False,6.0,,6.0,,502,2.6424691677093506
+Instancia_Sintetica_8Eq_v2.csv,3,8,[1],40020,20.0,False,6.0,,6.0,,501,2.57041597366333
+Instancia_Sintetica_8Eq_v2.csv,4,8,[1],40020,20.0,False,6.0,,6.0,,501,2.6653149127960205
+Instancia_Sintetica_8Eq_v2.csv,5,8,[1],40020,20.0,False,6.0,,6.0,,501,2.579923152923584
