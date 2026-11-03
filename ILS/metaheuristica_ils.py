@@ -197,7 +197,7 @@ def perturbacion(S):
 # ==========================================
 # 6. CICLO PRINCIPAL ILS
 # ==========================================
-def ejecutar_ils(filepath, Mmax=None, max_iter=200, time_limit=300, seed=42):
+def ejecutar_ils(filepath, Mmax=None, max_iter=500, seed=42):
     start_time = time.time()
     
     # Cargar datos
@@ -225,7 +225,7 @@ def ejecutar_ils(filepath, Mmax=None, max_iter=200, time_limit=300, seed=42):
     iter_sin_mejora = 0
     iteracion = 0
     
-    while iter_sin_mejora < max_iter and (time.time() - start_time) < time_limit:
+    while iter_sin_mejora < max_iter:
         iteracion += 1
         
         # Perturbación y nueva Búsqueda Local
@@ -309,7 +309,6 @@ def ejecutar_todas_instancias(
     semillas=range(1, 6),
     Mmax=None,
     max_iter=500,
-    time_limit=600,
 ):
     """Ejecuta cada CSV cinco veces (o con las semillas indicadas) y guarda el reporte."""
     carpeta_proyecto = Path(__file__).resolve().parents[1]
@@ -348,7 +347,6 @@ def ejecutar_todas_instancias(
                 archivo,
                 Mmax=mmax_ejecucion,
                 max_iter=max_iter,
-                time_limit=time_limit,
                 seed=seed,
             )
             objetivo_comparable, factible_comparable = evaluar_objetivo_comparable(
