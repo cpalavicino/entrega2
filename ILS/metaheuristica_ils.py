@@ -77,88 +77,179 @@ def cargar_instancia(filepath, seed=42, critical_seed=42):
 # 2. SOLUCIÓN INICIAL (Método del Polígono)
 # ==========================================
 def generar_solucion_inicial(N):
+    if N < 2 or N % 2:
+        raise ValueError("La cantidad de equipos debe ser par y al menos 2.")
+
     S = np.zeros((N, N - 1), dtype=int)
     equipos = list(range(N))
-    fijo = equipos[0]
-    moviles = equipos[1:]
-    
+    cantidad_por_lado = N // 2
+
     for t in range(N - 1):
-        # Emparejar el fijo con el primer movil
-        if t % 2 == 0:
-            S[fijo, t] = moviles[0] + 1
-            S[moviles[0], t] = -(fijo + 1)
-        else:
-            S[fijo, t] = -(moviles[0] + 1)
-            S[moviles[0], t] = fijo + 1
-            
-        # Emparejar el resto
-        for i in range(1, N // 2):
-            eq1 = moviles[i]
-            eq2 = moviles[N - 1 - i]
-            if (t + i) % 2 == 0:
-                S[eq1, t] = eq2 + 1
-                S[eq2, t] = -(eq1 + 1)
+        for i in range(cantidad_por_lado):
+            equipo_a = equipos[i]
+            equipo_b = equipos[N - 1 - i]
+            distancia = (equipo_b - equipo_a) % N
+            if distancia == cantidad_por_lado:
+                local = min(equipo_a, equipo_b)
+            elif distancia < cantidad_por_lado:
+                local = equipo_a
             else:
-                S[eq1, t] = -(eq2 + 1)
-                S[eq2, t] = eq1 + 1
-                
-        # Rotar los móviles
-        moviles.insert(0, moviles.pop())
-        
+                local = equipo_b
+            visitante = equipo_b if local == equipo_a else equipo_a
+            S[local, t] = visitante + 1
+            S[visitante, t] = -(local + 1)
+
+        equipos = [equipos[0], equipos[-1], *equipos[1:-1]]
+
     return S
 
 
 # ==========================================
 # 3. EVALUACIÓN DE FITNESS (Función Penalizada)
 # ==========================================
-def evaluar_fitness(S, e_ext, j_ext, s_estadios, p_clasicos, Mmax=1, w_b=1, w_ext=10, P_TV=10000, P_EST=10000):
+def evaluar_estado(
+    S,
+    e_ext,
+    j_ext,
+    s_estadios,
+    p_clasicos,
+    Mmax,
+    w_b,
+    w_ext,
+    verificar_estructura=True,
+):
+    """Devuelve el número de restricciones incumplidas y el objetivo del modelo."""
     N, jornadas_totales = S.shape
-    fitness = 0
-    
-    # 1. Contar Breaks y Penalizar 3 locales consecutivos
-    for i in range(N):
-        # Cuenta breaks normales (2 seguidos)
-        for t in range(jornadas_totales - 1):
-            if np.sign(S[i, t]) == np.sign(S[i, t+1]):
-                fitness += w_b
-                
-        # NUEVO: Penaliza estrictamente 3 partidos de local consecutivos
-        for t in range(jornadas_totales - 2):
-            if S[i, t] > 0 and S[i, t+1] > 0 and S[i, t+2] > 0:
-                fitness += 10000
-                
-    # 2. Viajes Externos Críticos
-    for i in e_ext:
-        for t in j_ext:
-            if S[i, t] < 0: # Si es visitante
-                fitness += w_ext
-                
-    # 3. Restricciones por Jornada (TV y Estadios)
-    for t in range(jornadas_totales):
-        # Clásicos
-        clasicos_fecha = 0
-        for (eq1, eq2) in p_clasicos:
-            if abs(S[eq1, t]) == eq2 + 1:
-                clasicos_fecha += 1
-        if clasicos_fecha > Mmax:
-            fitness += P_TV * (clasicos_fecha - Mmax)
-            
-        # Estadios compartidos
-        for (eq1, eq2) in s_estadios:
-            if S[eq1, t] > 0 and S[eq2, t] > 0:
-                fitness += P_EST
-                
-    return fitness
+    if jornadas_totales != N - 1 or N % 2:
+        raise ValueError("El calendario debe tener N equipos y N-1 jornadas.")
+
+    violaciones = 0
+    cantidad_localias = np.sum(S > 0, axis=1)
+    minimo_localias = N // 2 - 1
+    maximo_localias = N // 2
+    violaciones += int(
+        np.maximum(minimo_localias - cantidad_localias, 0).sum()
+        + np.maximum(cantidad_localias - maximo_localias, 0).sum()
+    )
+
+    if verificar_estructura:
+        pares_enfrentados = {}
+        for jornada in range(jornadas_totales):
+            for equipo in range(N):
+                valor = int(S[equipo, jornada])
+                rival = abs(valor) - 1
+                if valor == 0 or rival < 0 or rival >= N or rival == equipo:
+                    violaciones += 1
+                    continue
+                if int(S[rival, jornada]) != (-equipo - 1 if valor > 0 else equipo + 1):
+                    violaciones += 1
+                if equipo < rival:
+                    par = (equipo, rival)
+                    pares_enfrentados[par] = pares_enfrentados.get(par, 0) + 1
+        for equipo_a in range(N):
+            for equipo_b in range(equipo_a + 1, N):
+                veces = pares_enfrentados.get((equipo_a, equipo_b), 0)
+                if veces != 1:
+                    violaciones += abs(veces - 1)
+
+    breaks = np.count_nonzero(
+        ((S[:, :-1] > 0) & (S[:, 1:] > 0))
+        | ((S[:, :-1] < 0) & (S[:, 1:] < 0))
+    )
+    visitas_criticas = 0
+    if e_ext and j_ext:
+        visitas_criticas = np.count_nonzero(S[np.ix_(e_ext, j_ext)] < 0)
+
+    if p_clasicos:
+        equipos_a, equipos_b = np.asarray(p_clasicos).T
+        clasicos_por_jornada = np.count_nonzero(
+            np.abs(S[equipos_a, :]) == (equipos_b + 1)[:, np.newaxis],
+            axis=0,
+        )
+        violaciones += int(np.maximum(clasicos_por_jornada - Mmax, 0).sum())
+
+    if s_estadios:
+        equipos_a, equipos_b = np.asarray(s_estadios).T
+        conflictos_por_jornada = np.count_nonzero(
+            (S[equipos_a, :] > 0) & (S[equipos_b, :] > 0),
+            axis=0,
+        )
+        violaciones += int(conflictos_por_jornada.sum())
+
+    if jornadas_totales >= 3:
+        tres_localias = (
+            (S[:, :-2] > 0) & (S[:, 1:-1] > 0) & (S[:, 2:] > 0)
+        )
+        tres_visitas = (
+            (S[:, :-2] < 0) & (S[:, 1:-1] < 0) & (S[:, 2:] < 0)
+        )
+        violaciones += int(np.count_nonzero(tres_localias | tres_visitas))
+
+    objetivo = w_b * breaks + w_ext * visitas_criticas
+    return violaciones, objetivo
+
+
+def evaluar_fitness(
+    S,
+    e_ext,
+    j_ext,
+    s_estadios,
+    p_clasicos,
+    Mmax=1,
+    w_b=1,
+    w_ext=2,
+    P_TV=10000,
+    P_EST=10000,
+    verificar_estructura=True,
+):
+    """Prioriza calendarios factibles y luego minimiza el objetivo del modelo."""
+    violaciones, objetivo = evaluar_estado(
+        S,
+        e_ext,
+        j_ext,
+        s_estadios,
+        p_clasicos,
+        Mmax,
+        w_b,
+        w_ext,
+        verificar_estructura=verificar_estructura,
+    )
+    N, jornadas_totales = S.shape
+    max_objetivo = (
+        abs(w_b) * N * max(0, jornadas_totales - 1)
+        + abs(w_ext) * len(e_ext) * len(j_ext)
+    )
+    penalizacion = max(P_TV, P_EST, max_objetivo + 1)
+    return objetivo + penalizacion * violaciones
 
 
 # ==========================================
 # 4. BÚSQUEDA LOCAL (Swap de Jornadas)
 # ==========================================
-def busqueda_local(S, e_ext, j_ext, s_estadios, p_clasicos, Mmax):
+def busqueda_local(
+    S,
+    e_ext,
+    j_ext,
+    s_estadios,
+    p_clasicos,
+    Mmax,
+    w_b=1.0,
+    w_ext=2.0,
+):
     N, jornadas_totales = S.shape
     S_best = S.copy()
-    f_best = evaluar_fitness(S_best, e_ext, j_ext, s_estadios, p_clasicos, Mmax)
-    
+    f_best = evaluar_fitness(
+        S_best,
+        e_ext,
+        j_ext,
+        s_estadios,
+        p_clasicos,
+        Mmax,
+        w_b=w_b,
+        w_ext=w_ext,
+        verificar_estructura=False,
+    )
+
     mejora = True
     while mejora:
         mejora = False
@@ -168,7 +259,17 @@ def busqueda_local(S, e_ext, j_ext, s_estadios, p_clasicos, Mmax):
                 # Swap de columnas completas
                 S_temp[:, [i, j]] = S_temp[:, [j, i]]
                 
-                f_temp = evaluar_fitness(S_temp, e_ext, j_ext, s_estadios, p_clasicos, Mmax)
+                f_temp = evaluar_fitness(
+                    S_temp,
+                    e_ext,
+                    j_ext,
+                    p_clasicos=p_clasicos,
+                    s_estadios=s_estadios,
+                    Mmax=Mmax,
+                    w_b=w_b,
+                    w_ext=w_ext,
+                    verificar_estructura=False,
+                )
                 if f_temp < f_best:
                     S_best = S_temp
                     f_best = f_temp
@@ -176,6 +277,108 @@ def busqueda_local(S, e_ext, j_ext, s_estadios, p_clasicos, Mmax):
                     break # Primera mejora
             if mejora:
                 break
+        if mejora:
+            continue
+
+        for jornada in range(jornadas_totales):
+            S_temp = S_best.copy()
+            S_temp[:, jornada] *= -1
+            f_temp = evaluar_fitness(
+                S_temp,
+                e_ext,
+                j_ext,
+                s_estadios,
+                p_clasicos,
+                Mmax,
+                w_b=w_b,
+                w_ext=w_ext,
+                verificar_estructura=False,
+            )
+            if f_temp < f_best:
+                S_best = S_temp
+                f_best = f_temp
+                mejora = True
+                break
+        if mejora:
+            continue
+
+        minimo_localias = N // 2 - 1
+        maximo_localias = N // 2
+        cantidad_localias = np.sum(S_best > 0, axis=1)
+        for jornada in range(jornadas_totales):
+            for local in np.flatnonzero(S_best[:, jornada] > 0):
+                visitante = abs(int(S_best[local, jornada])) - 1
+                if (
+                    cantidad_localias[local] <= minimo_localias
+                    or cantidad_localias[visitante] >= maximo_localias
+                ):
+                    continue
+                S_temp = S_best.copy()
+                S_temp[local, jornada] *= -1
+                S_temp[visitante, jornada] *= -1
+                f_temp = evaluar_fitness(
+                    S_temp,
+                    e_ext,
+                    j_ext,
+                    s_estadios,
+                    p_clasicos,
+                    Mmax,
+                    w_b=w_b,
+                    w_ext=w_ext,
+                    verificar_estructura=False,
+                )
+                if f_temp < f_best:
+                    S_best = S_temp
+                    f_best = f_temp
+                    mejora = True
+                    break
+            if mejora:
+                break
+        if mejora:
+            continue
+
+        for jornada_conflicto in range(jornadas_totales):
+            for equipo_a, equipo_b in s_estadios:
+                if not (
+                    S_best[equipo_a, jornada_conflicto] > 0
+                    and S_best[equipo_b, jornada_conflicto] > 0
+                ):
+                    continue
+                for equipo in (equipo_a, equipo_b):
+                    visitante_conflicto = abs(
+                        int(S_best[equipo, jornada_conflicto])
+                    ) - 1
+                    if cantidad_localias[visitante_conflicto] >= maximo_localias:
+                        continue
+                    for jornada_away in np.flatnonzero(S_best[equipo, :] < 0):
+                        donante = abs(int(S_best[equipo, jornada_away])) - 1
+                        if cantidad_localias[donante] <= minimo_localias:
+                            continue
+                        S_temp = S_best.copy()
+                        S_temp[equipo, jornada_conflicto] *= -1
+                        S_temp[visitante_conflicto, jornada_conflicto] *= -1
+                        S_temp[equipo, jornada_away] *= -1
+                        S_temp[donante, jornada_away] *= -1
+                        f_temp = evaluar_fitness(
+                            S_temp,
+                            e_ext,
+                            j_ext,
+                            s_estadios,
+                            p_clasicos,
+                            Mmax,
+                            w_b=w_b,
+                            w_ext=w_ext,
+                            verificar_estructura=False,
+                        )
+                        if f_temp < f_best:
+                            S_best = S_temp
+                            f_best = f_temp
+                            mejora = True
+                            break
+                    if mejora:
+                        break
+                if mejora:
+                    break
     return S_best, f_best
 
 
@@ -185,19 +388,52 @@ def busqueda_local(S, e_ext, j_ext, s_estadios, p_clasicos, Mmax):
 def perturbacion(S):
     S_prima = S.copy()
     jornadas_totales = S.shape[1]
-    
-    k = random.randint(2, 4) # Intercambios bruscos
+    cantidad_equipos = S.shape[0]
+    minimo_localias = cantidad_equipos // 2 - 1
+    maximo_localias = cantidad_equipos // 2
+
+    k = random.randint(2, 4)
     for _ in range(k):
-        a, b = random.sample(range(jornadas_totales), 2)
-        S_prima[:, [a, b]] = S_prima[:, [b, a]]
-        
+        movimiento = random.choice(("intercambiar", "invertir_jornada", "cambiar_localia"))
+        if movimiento == "intercambiar":
+            a, b = random.sample(range(jornadas_totales), 2)
+            S_prima[:, [a, b]] = S_prima[:, [b, a]]
+        elif movimiento == "invertir_jornada":
+            jornada = random.randrange(jornadas_totales)
+            S_prima[:, jornada] *= -1
+        else:
+            cantidad_localias = np.sum(S_prima > 0, axis=1)
+            movimientos_posibles = []
+            for jornada in range(jornadas_totales):
+                for local in np.flatnonzero(S_prima[:, jornada] > 0):
+                    visitante = abs(int(S_prima[local, jornada])) - 1
+                    if (
+                        cantidad_localias[local] > minimo_localias
+                        and cantidad_localias[visitante] < maximo_localias
+                    ):
+                        movimientos_posibles.append((local, visitante, jornada))
+            if movimientos_posibles:
+                local, visitante, jornada = random.choice(movimientos_posibles)
+                S_prima[local, jornada] *= -1
+                S_prima[visitante, jornada] *= -1
+            else:
+                jornada = random.randrange(jornadas_totales)
+                S_prima[:, jornada] *= -1
+
     return S_prima
 
 
 # ==========================================
 # 6. CICLO PRINCIPAL ILS
 # ==========================================
-def ejecutar_ils(filepath, Mmax=None, max_iter=500, seed=42):
+def ejecutar_ils(
+    filepath,
+    Mmax=None,
+    max_iter=500,
+    seed=42,
+    w_b=1.0,
+    w_ext=2.0,
+):
     start_time = time.time()
     
     # Cargar datos
@@ -217,10 +453,30 @@ def ejecutar_ils(filepath, Mmax=None, max_iter=500, seed=42):
     
     # Inicialización
     S_actual = generar_solucion_inicial(N)
-    S_actual, f_actual = busqueda_local(S_actual, e_ext, j_ext, s_estadios, p_clasicos, Mmax)
+    S_actual, f_actual = busqueda_local(
+        S_actual,
+        e_ext,
+        j_ext,
+        s_estadios,
+        p_clasicos,
+        Mmax,
+        w_b=w_b,
+        w_ext=w_ext,
+    )
     
     S_mejor = S_actual.copy()
     f_mejor = f_actual
+    violaciones_mejor, objetivo_mejor = evaluar_estado(
+        S_mejor,
+        e_ext,
+        j_ext,
+        s_estadios,
+        p_clasicos,
+        Mmax,
+        w_b,
+        w_ext,
+        verificar_estructura=False,
+    )
     
     iter_sin_mejora = 0
     iteracion = 0
@@ -230,18 +486,52 @@ def ejecutar_ils(filepath, Mmax=None, max_iter=500, seed=42):
         
         # Perturbación y nueva Búsqueda Local
         S_prima = perturbacion(S_actual)
-        S_candidata, f_candidata = busqueda_local(S_prima, e_ext, j_ext, s_estadios, p_clasicos, Mmax)
+        S_candidata, f_candidata = busqueda_local(
+            S_prima,
+            e_ext,
+            j_ext,
+            s_estadios,
+            p_clasicos,
+            Mmax,
+            w_b=w_b,
+            w_ext=w_ext,
+        )
+        violaciones_candidata, objetivo_candidata = evaluar_estado(
+            S_candidata,
+            e_ext,
+            j_ext,
+            s_estadios,
+            p_clasicos,
+            Mmax,
+            w_b,
+            w_ext,
+            verificar_estructura=False,
+        )
         
         # Actualizar mejor histórico
-        if f_candidata < f_mejor:
+        if (
+            violaciones_candidata < violaciones_mejor
+            or (
+                violaciones_candidata == violaciones_mejor
+                and objetivo_candidata < objetivo_mejor
+            )
+        ):
             S_mejor = S_candidata.copy()
             f_mejor = f_candidata
+            violaciones_mejor = violaciones_candidata
+            objetivo_mejor = objetivo_candidata
             iter_sin_mejora = 0
         else:
             iter_sin_mejora += 1
             
-        # Criterio de Aceptación (5% de tolerancia)
-        if f_candidata <= f_mejor * 1.05:
+        # La tolerancia se aplica al objetivo, nunca a la factibilidad.
+        if (
+            violaciones_candidata < violaciones_mejor
+            or (
+                violaciones_candidata == violaciones_mejor
+                and objetivo_candidata <= objetivo_mejor * 1.05
+            )
+        ):
             S_actual = S_candidata.copy()
             f_actual = f_candidata
         else:
@@ -264,43 +554,10 @@ def evaluar_objetivo_comparable(
     w_ext,
 ):
     """Evalúa una solución con el objetivo y las restricciones del modelo Gurobi."""
-    cantidad_equipos, jornadas_totales = S.shape
-    cantidad_localias = np.sum(S > 0, axis=1)
-    factible = bool(
-        np.all(cantidad_localias >= cantidad_equipos // 2 - 1)
-        and np.all(cantidad_localias <= cantidad_equipos // 2)
+    violaciones, objetivo = evaluar_estado(
+        S, e_ext, j_ext, s_estadios, p_clasicos, Mmax, w_b, w_ext
     )
-
-    breaks = 0
-    for equipo in range(cantidad_equipos):
-        for jornada in range(1, jornadas_totales):
-            if np.sign(S[equipo, jornada - 1]) == np.sign(S[equipo, jornada]):
-                breaks += 1
-        for jornada in range(jornadas_totales - 2):
-            tres_jornadas = S[equipo, jornada:jornada + 3]
-            if np.all(tres_jornadas > 0) or np.all(tres_jornadas < 0):
-                factible = False
-
-    visitas_criticas = sum(
-        S[equipo, jornada] < 0
-        for equipo in e_ext
-        for jornada in j_ext
-    )
-    for jornada in range(jornadas_totales):
-        clasicos = sum(
-            abs(S[equipo_1, jornada]) == equipo_2 + 1
-            for equipo_1, equipo_2 in p_clasicos
-        )
-        if clasicos > Mmax:
-            factible = False
-        if any(
-            S[equipo_1, jornada] > 0 and S[equipo_2, jornada] > 0
-            for equipo_1, equipo_2 in s_estadios
-        ):
-            factible = False
-
-    objetivo = w_b * breaks + w_ext * visitas_criticas
-    return objetivo, factible
+    return objetivo, violaciones == 0
 
 
 def ejecutar_todas_instancias(
@@ -348,6 +605,8 @@ def ejecutar_todas_instancias(
                 Mmax=mmax_ejecucion,
                 max_iter=max_iter,
                 seed=seed,
+                w_b=referencias["w_b"],
+                w_ext=referencias["w_ext"],
             )
             objetivo_comparable, factible_comparable = evaluar_objetivo_comparable(
                 solucion,
